@@ -401,6 +401,7 @@
       editingId: null,
       deletingId: null,
       deletingTitle: "",
+      deletingThumbnail: "",
       selectedFile: null,
       selectedPreviewUrl: "",
       selectedStoragePath: "",
@@ -437,7 +438,6 @@
     const dropzone = $("dropzone");
     const thumbnailFile = $("thumbnailFile");
     const previewImg = $("previewImg");
-    const previewFallback = $("previewFallback");
     const mediaState = $("mediaState");
     const dropTitle = $("dropTitle");
 
@@ -445,6 +445,8 @@
       title: $("title"), description: $("description"), type: $("type"), tag: $("tag"),
       size: $("size"), date: $("date"), icon: $("icon"), launch: $("launch")
     };
+
+    const nextFrame = () => new Promise(requestAnimationFrame);
 
     function showToast(title, message){
       toast.innerHTML = `<strong>${escapeHtml(title)}</strong><span>${escapeHtml(message)}</span>`;
@@ -517,6 +519,18 @@
         saveBtn.textContent = "Upload to Firestore";
         deleteFromEditBtn.style.display = "none";
       }
+    }
+
+    function setUploadProgress(show, pct = 0, stage = "Uploading"){
+      const wrap = $("uploadProgressWrap");
+      const bar = $("uploadBar");
+      const label = $("uploadStage");
+      const percent = $("uploadPct");
+      if(!wrap || !bar || !label || !percent) return;
+      wrap.style.display = show ? "grid" : "none";
+      bar.style.width = `${Math.max(0, Math.min(100, pct))}%`;
+      label.textContent = stage;
+      percent.textContent = `${Math.round(pct)}%`;
     }
 
     function clearSelectedMedia(){
@@ -638,14 +652,17 @@
     }
 
     async function compressImageFile(file){
-      const MAX_BYTES_DIRECT = 1.8 * 1024 * 1024;
-      const MAX_DIMENSION = 960;
-      const QUALITY = 0.68;
+      const MAX_DIRECT_BYTES = 2.5 * 1024 * 1024;
+      const MAX_DIMENSION = 1400;
+      const QUALITY = 0.76;
 
-      if(file.size <= MAX_BYTES_DIRECT) return file;
+      if(file.size <= MAX_DIRECT_BYTES) return file;
 
       const objectUrl = URL.createObjectURL(file);
       try{
+        setUploadProgress(true, 6, "Optimizing image…");
+        await nextFrame();
+
         let width = 1, height = 1, source = null;
 
         if("createImageBitmap" in window){
@@ -694,29 +711,40 @@
       }
     }
 
-    function setUploadProgress(show, pct = 0, stage = "Uploading"){
-      const wrap = document.getElementById("uploadProgressWrap");
-      const bar = document.getElementById("uploadBar");
-      const label = document.getElementById("uploadStage");
-      const percent = document.getElementById("uploadPct");
-      if(!wrap || !bar || !label || !percent) return;
-      wrap.style.display = show ? "grid" : "none";
-      bar.style.width = `${Math.max(0, Math.min(100, pct))}%`;
-      label.textContent = stage;
-      percent.textContent = `${Math.round(pct)}%`;
-    }
-
     async function uploadSelectedMedia(){
       if(!state.selectedFile) return state.existingThumbnail || "";
-      const uploadFile = await compressImageFile(state.selectedFile);
+
+      const originalFile = state.selectedFile;
+
+      if(originalFile.size > 18 * 1024 * 1024){
+        throw new Error("Thumbnail is too large. Use an image under 18 MB.");
+      }
+
+      setUploadProgress(true, 1, "Reading image…");
+      await nextFrame();
+
+      let uploadFile = originalFile;
+
+      if(originalFile.size > 2.5 * 1024 * 1024){
+        uploadFile = await compressImageFile(originalFile);
+      }else{
+        setUploadProgress(true, 10, "Preparing upload…");
+        await nextFrame();
+      }
+
       const safeName = uploadFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
       const path = `uploads/${Date.now()}_${Math.random().toString(36).slice(2)}_${safeName}`;
       const ref = storageRef(storage, path);
-      const metadata = { contentType: uploadFile.type || state.selectedFile.type || "image/jpeg", cacheControl: "public,max-age=31536000,immutable" };
+      const metadata = {
+        contentType: uploadFile.type || originalFile.type || "image/jpeg",
+        cacheControl: "public,max-age=31536000,immutable"
+      };
 
-      setUploadProgress(true, 2, "Preparing upload");
+      setUploadProgress(true, 15, "Uploading image…");
+
       return await new Promise((resolve, reject) => {
         const task = uploadBytesResumable(ref, uploadFile, metadata);
+
         const timeout = setTimeout(() => {
           try { task.cancel(); } catch {}
           reject(new Error("Upload timed out. Try a smaller image."));
@@ -725,7 +753,7 @@
         task.on("state_changed", (snap) => {
           const pct = snap.totalBytes ? (snap.bytesTransferred / snap.totalBytes) * 100 : 0;
           const stage = snap.state === "paused" ? "Paused" : snap.state === "running" ? "Uploading" : "Processing";
-          setUploadProgress(true, pct, stage);
+          setUploadProgress(true, Math.max(15, pct), stage);
         }, (err) => {
           clearTimeout(timeout);
           setUploadProgress(false, 0, "Idle");
@@ -757,6 +785,7 @@
         icon: fields.icon.value,
         launch: fields.launch.value.trim()
       };
+
       if(!data.title || !data.description){
         showToast("Missing fields", "Title and description are required.");
         return;
@@ -764,6 +793,7 @@
 
       saveBtn.disabled = true;
       saveBtn.textContent = state.editingId ? "Saving..." : "Uploading...";
+
       try{
         const thumbnail = await uploadSelectedMedia();
         const payload = {
@@ -772,7 +802,9 @@
           updatedAt: serverTimestamp(),
           createdAt: state.editingId ? undefined : serverTimestamp()
         };
+
         Object.keys(payload).forEach(k => payload[k] === undefined && delete payload[k]);
+
         if(state.editingId){
           await updateDoc(doc(db, "global", state.editingId), payload);
           showToast("Updated", "Entry saved to Firestore.");
@@ -780,7 +812,11 @@
           await addDoc(colRef, { ...payload, createdAt: serverTimestamp() });
           showToast("Uploaded", "New item added to the global collection.");
         }
+
         clearForm();
+      }catch(err){
+        console.error(err);
+        showToast("Save failed", err?.message || "Could not save entry.");
       }finally{
         saveBtn.disabled = false;
         saveBtn.textContent = state.editingId ? "Save changes" : "Upload to Firestore";
@@ -811,6 +847,19 @@
       confirmStage.textContent = "Waiting";
     }
 
+    async function tryDeleteStorageThumb(url){
+      if(!url) return;
+      try{
+        await deleteObject(storageRef(storage, url));
+      }catch{
+        try{
+          const decoded = decodeURIComponent(url);
+          const maybePath = decoded.includes("/o/") ? decoded.split("/o/")[1].split("?")[0] : decoded;
+          if(maybePath) await deleteObject(storageRef(storage, maybePath));
+        }catch{}
+      }
+    }
+
     async function runDelete(){
       if(!state.deletingId) return;
       confirmStage.textContent = "Deleting";
@@ -820,11 +869,7 @@
         await new Promise(r => setTimeout(r, 55));
       }
       await deleteDoc(doc(db, "global", state.deletingId));
-      if(state.deletingThumbnail?.includes("firebasestorage")){
-        try{
-          await deleteObject(storageRef(storage, state.deletingThumbnail));
-        }catch{}
-      }
+      await tryDeleteStorageThumb(state.deletingThumbnail);
       showToast("Deleted", `${state.deletingTitle} was removed.`);
       closeDeleteConfirm();
       if(state.editingId === state.deletingId) clearForm();
@@ -852,11 +897,6 @@
         console.error(err);
         showToast("Save failed", err?.message || "Could not save entry.");
       }
-    });
-
-    [fields.title, fields.description, fields.type, fields.tag, fields.size, fields.date, fields.icon, fields.launch].forEach(el => {
-      el.addEventListener("input", () => {});
-      el.addEventListener("change", () => {});
     });
 
     thumbnailFile.addEventListener("change", (e) => handleFile(e.target.files?.[0]));
@@ -916,4 +956,4 @@
     renderCards();
   </script>
 </body>
-</html>"}]}
+</html>
