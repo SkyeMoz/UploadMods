@@ -316,6 +316,11 @@
               <div class="previewImg" id="previewImg"><div class="previewFallback" id="previewFallback">No image selected yet.</div></div>
             </div>
 
+            <div class="uploadProgressWrap" id="uploadProgressWrap" style="display:none;gap:10px;padding:2px 0 0;">
+              <div class="progressLine"><span id="uploadStage">Idle</span><span id="uploadPct">0%</span></div>
+              <div class="bar"><span id="uploadBar"></span></div>
+            </div>
+
             <div class="formActions">
               <button class="btn primary" id="saveBtn" type="submit">Upload to Firestore</button>
               <button class="btn danger" id="deleteFromEditBtn" type="button" style="display:none;">Delete this entry</button>
@@ -372,7 +377,7 @@
       onSnapshot, query, orderBy, serverTimestamp
     } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
     import {
-      getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject
+      getStorage, ref as storageRef, uploadBytesResumable, getDownloadURL, deleteObject
     } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
 
     const firebaseConfig = {
@@ -523,9 +528,10 @@
       dropTitle.textContent = "Choose an image";
       thumbnailFile.value = "";
       previewImg.innerHTML = `<div class="previewFallback" id="previewFallback">No image selected yet.</div>`;
+      setUploadProgress(false, 0, "Idle");
     }
 
-    function setPreviewFromUrl(url, label = "Selected image"){ 
+    function setPreviewFromUrl(url, label = "Selected image"){
       if(url){
         previewImg.innerHTML = `<img src="${escapeHtml(url)}" alt="preview" />`;
         mediaState.textContent = label;
@@ -550,7 +556,7 @@
       mediaState.textContent = `${file.name} • ${Math.round(file.size / 1024)} KB`;
       dropTitle.textContent = file.name;
       previewImg.innerHTML = `<img src="${url}" alt="selected image" />`;
-      showToast("Media picked", "It will be compressed before upload to speed things up.");
+      showToast("Media picked", "Ready to upload.");
     }
 
     function fillForm(item){
@@ -632,27 +638,47 @@
     }
 
     async function compressImageFile(file){
-      const MAX_DIMENSION = 1280;
-      const QUALITY = 0.78;
+      const MAX_BYTES_DIRECT = 1.8 * 1024 * 1024;
+      const MAX_DIMENSION = 960;
+      const QUALITY = 0.68;
+
+      if(file.size <= MAX_BYTES_DIRECT) return file;
 
       const objectUrl = URL.createObjectURL(file);
       try{
-        const img = await new Promise((resolve, reject) => {
-          const image = new Image();
-          image.onload = () => resolve(image);
-          image.onerror = reject;
-          image.src = objectUrl;
-        });
+        let width = 1, height = 1, source = null;
 
-        const scale = Math.min(1, MAX_DIMENSION / Math.max(img.width || 1, img.height || 1));
-        const width = Math.max(1, Math.round((img.width || 1) * scale));
-        const height = Math.max(1, Math.round((img.height || 1) * scale));
+        if("createImageBitmap" in window){
+          try{
+            source = await createImageBitmap(file);
+            width = source.width || 1;
+            height = source.height || 1;
+          }catch{
+            source = null;
+          }
+        }
+
+        if(!source){
+          const img = await new Promise((resolve, reject) => {
+            const image = new Image();
+            image.onload = () => resolve(image);
+            image.onerror = reject;
+            image.src = objectUrl;
+          });
+          source = img;
+          width = img.width || 1;
+          height = img.height || 1;
+        }
+
+        const scale = Math.min(1, MAX_DIMENSION / Math.max(width, height));
+        const outW = Math.max(1, Math.round(width * scale));
+        const outH = Math.max(1, Math.round(height * scale));
 
         const canvas = document.createElement("canvas");
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext("2d", { alpha: true });
-        ctx.drawImage(img, 0, 0, width, height);
+        canvas.width = outW;
+        canvas.height = outH;
+        const ctx = canvas.getContext("2d", { alpha: true, willReadFrequently: false });
+        ctx.drawImage(source, 0, 0, outW, outH);
 
         const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/webp", QUALITY))
           || await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", QUALITY));
@@ -660,9 +686,24 @@
         if(!blob) return file;
         const ext = blob.type.includes("webp") ? "webp" : "jpg";
         return new File([blob], file.name.replace(/\.[^.]+$/, "") + `.${ext}`, { type: blob.type || file.type });
+      }catch(err){
+        console.warn("Compression skipped:", err);
+        return file;
       }finally{
         URL.revokeObjectURL(objectUrl);
       }
+    }
+
+    function setUploadProgress(show, pct = 0, stage = "Uploading"){
+      const wrap = document.getElementById("uploadProgressWrap");
+      const bar = document.getElementById("uploadBar");
+      const label = document.getElementById("uploadStage");
+      const percent = document.getElementById("uploadPct");
+      if(!wrap || !bar || !label || !percent) return;
+      wrap.style.display = show ? "grid" : "none";
+      bar.style.width = `${Math.max(0, Math.min(100, pct))}%`;
+      label.textContent = stage;
+      percent.textContent = `${Math.round(pct)}%`;
     }
 
     async function uploadSelectedMedia(){
@@ -672,8 +713,37 @@
       const path = `uploads/${Date.now()}_${Math.random().toString(36).slice(2)}_${safeName}`;
       const ref = storageRef(storage, path);
       const metadata = { contentType: uploadFile.type || state.selectedFile.type || "image/jpeg", cacheControl: "public,max-age=31536000,immutable" };
-      await uploadBytes(ref, uploadFile, metadata);
-      return await getDownloadURL(ref);
+
+      setUploadProgress(true, 2, "Preparing upload");
+      return await new Promise((resolve, reject) => {
+        const task = uploadBytesResumable(ref, uploadFile, metadata);
+        const timeout = setTimeout(() => {
+          try { task.cancel(); } catch {}
+          reject(new Error("Upload timed out. Try a smaller image."));
+        }, 120000);
+
+        task.on("state_changed", (snap) => {
+          const pct = snap.totalBytes ? (snap.bytesTransferred / snap.totalBytes) * 100 : 0;
+          const stage = snap.state === "paused" ? "Paused" : snap.state === "running" ? "Uploading" : "Processing";
+          setUploadProgress(true, pct, stage);
+        }, (err) => {
+          clearTimeout(timeout);
+          setUploadProgress(false, 0, "Idle");
+          reject(err);
+        }, async () => {
+          try{
+            clearTimeout(timeout);
+            const url = await getDownloadURL(task.snapshot.ref);
+            setUploadProgress(true, 100, "Done");
+            setTimeout(() => setUploadProgress(false, 0, "Idle"), 400);
+            resolve(url);
+          }catch(err){
+            clearTimeout(timeout);
+            setUploadProgress(false, 0, "Idle");
+            reject(err);
+          }
+        });
+      });
     }
 
     async function saveEntry(){
