@@ -316,7 +316,12 @@
               <div class="previewImg" id="previewImg"><div class="previewFallback" id="previewFallback">No image selected yet.</div></div>
             </div>
 
-            
+            <div class="uploadProgressWrap" id="uploadProgressWrap" style="display:none;gap:10px;padding:2px 0 0;">
+              <div class="progressLine"><span id="uploadStage">Idle</span><span id="uploadPct">0%</span></div>
+              <div class="bar"><span id="uploadBar"></span></div>
+            </div>
+
+            <div class="formActions">
               <button class="btn primary" id="saveBtn" type="submit">Upload to Firestore</button>
               <button class="btn danger" id="deleteFromEditBtn" type="button" style="display:none;">Delete this entry</button>
             </div>
@@ -514,7 +519,19 @@
       }
     }
 
-    function clearSelectedMedFromUrl(url, label = "Selected image"){
+    function clearSelectedMedia(){
+      state.selectedFile = null;
+      if(state.selectedPreviewUrl) URL.revokeObjectURL(state.selectedPreviewUrl);
+      state.selectedPreviewUrl = "";
+      state.selectedStoragePath = "";
+      mediaState.textContent = "No file selected";
+      dropTitle.textContent = "Choose an image";
+      thumbnailFile.value = "";
+      previewImg.innerHTML = `<div class="previewFallback" id="previewFallback">No image selected yet.</div>`;
+      setUploadProgress(false, 0, "Idle");
+    }
+
+    function setPreviewFromUrl(url, label = "Selected image"){
       if(url){
         previewImg.innerHTML = `<img src="${escapeHtml(url)}" alt="preview" />`;
         mediaState.textContent = label;
@@ -537,7 +554,22 @@
       if(state.selectedPreviewUrl) URL.revokeObjectURL(state.selectedPreviewUrl);
       state.selectedPreviewUrl = url;
       mediaState.textContent = `${file.name} • ${Math.round(file.size / 1024)} KB`;
-      dropTitle.textContent = fumbnail || "";
+      dropTitle.textContent = file.name;
+      previewImg.innerHTML = `<img src="${url}" alt="selected image" />`;
+      showToast("Media picked", "Ready to upload.");
+    }
+
+    function fillForm(item){
+      fields.title.value = item.title || "";
+      fields.description.value = item.description || "";
+      fields.type.value = item.type || "Apps";
+      fields.tag.value = item.tag || "";
+      fields.size.value = item.size || "";
+      fields.date.value = toDateText(item.date) || todayISO();
+      fields.icon.value = item.icon || "spark";
+      fields.launch.value = item.launch || "";
+      state.editingId = item.id;
+      state.existingThumbnail = item.thumbnail || "";
       clearSelectedMedia();
       if(item.thumbnail) setPreviewFromUrl(item.thumbnail, "Current thumbnail");
       setMode(true);
@@ -640,7 +672,58 @@
 
         const scale = Math.min(1, MAX_DIMENSION / Math.max(width, height));
         const outW = Math.max(1, Math.round(width * scale));
-        const outH = Math.max(1, Math.round(height * scferred / snap.totalBytes) * 100 : 0;
+        const outH = Math.max(1, Math.round(height * scale));
+
+        const canvas = document.createElement("canvas");
+        canvas.width = outW;
+        canvas.height = outH;
+        const ctx = canvas.getContext("2d", { alpha: true, willReadFrequently: false });
+        ctx.drawImage(source, 0, 0, outW, outH);
+
+        const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/webp", QUALITY))
+          || await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", QUALITY));
+
+        if(!blob) return file;
+        const ext = blob.type.includes("webp") ? "webp" : "jpg";
+        return new File([blob], file.name.replace(/\.[^.]+$/, "") + `.${ext}`, { type: blob.type || file.type });
+      }catch(err){
+        console.warn("Compression skipped:", err);
+        return file;
+      }finally{
+        URL.revokeObjectURL(objectUrl);
+      }
+    }
+
+    function setUploadProgress(show, pct = 0, stage = "Uploading"){
+      const wrap = document.getElementById("uploadProgressWrap");
+      const bar = document.getElementById("uploadBar");
+      const label = document.getElementById("uploadStage");
+      const percent = document.getElementById("uploadPct");
+      if(!wrap || !bar || !label || !percent) return;
+      wrap.style.display = show ? "grid" : "none";
+      bar.style.width = `${Math.max(0, Math.min(100, pct))}%`;
+      label.textContent = stage;
+      percent.textContent = `${Math.round(pct)}%`;
+    }
+
+    async function uploadSelectedMedia(){
+      if(!state.selectedFile) return state.existingThumbnail || "";
+      const uploadFile = await compressImageFile(state.selectedFile);
+      const safeName = uploadFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const path = `uploads/${Date.now()}_${Math.random().toString(36).slice(2)}_${safeName}`;
+      const ref = storageRef(storage, path);
+      const metadata = { contentType: uploadFile.type || state.selectedFile.type || "image/jpeg", cacheControl: "public,max-age=31536000,immutable" };
+
+      setUploadProgress(true, 2, "Preparing upload");
+      return await new Promise((resolve, reject) => {
+        const task = uploadBytesResumable(ref, uploadFile, metadata);
+        const timeout = setTimeout(() => {
+          try { task.cancel(); } catch {}
+          reject(new Error("Upload timed out. Try a smaller image."));
+        }, 120000);
+
+        task.on("state_changed", (snap) => {
+          const pct = snap.totalBytes ? (snap.bytesTransferred / snap.totalBytes) * 100 : 0;
           const stage = snap.state === "paused" ? "Paused" : snap.state === "running" ? "Uploading" : "Processing";
           setUploadProgress(true, pct, stage);
         }, (err) => {
@@ -674,28 +757,55 @@
         icon: fields.icon.value,
         launch: fields.launch.value.trim()
       };
-
       if(!data.title || !data.description){
         showToast("Missing fields", "Title and description are required.");
         return;
       }
 
       saveBtn.disabled = true;
-      const isEditing = Boolean(state.editingId);
-      const docId = state.editingId;
-      saveBtn.textContent = isEditing ? "Saving..." : "Publishing...";
-
+      saveBtn.textContent = state.editingId ? "Saving..." : "Uploading...";
       try{
-        const basePayload = {
+        const thumbnail = await uploadSelectedMedia();
+        const payload = {
           ...data,
-          thumbnail: state.existingThumbnail || "",
-          updatedAt: serverTimestamp()
+          thumbnail: thumbnail || "",
+          updatedAt: serverTimestamp(),
+          createdAt: state.editingId ? undefined : serverTimestamp()
         };
+        Object.keys(payload).forEach(k => payload[k] === undefined && delete payload[k]);
+        if(state.editingId){
+          await updateDoc(doc(db, "global", state.editingId), payload);
+          showToast("Updated", "Entry saved to Firestore.");
+        }else{
+          await addDoc(colRef, { ...payload, createdAt: serverTimestamp() });
+          showToast("Uploaded", "New item added to the global collection.");
+        }
+        clearForm();
+      }finally{
+        saveBtn.disabled = false;
+        saveBtn.textContent = state.editingId ? "Save changes" : "Upload to Firestore";
+      }
+    }
 
-        let targetId = docId;
-        if(isEditing){
-          ae.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-              const path = `uploads/${Date.now()}_${Math.random().toString(36).slice(2)}_ria-hidden", "true");
+    function openDeleteConfirm(id, title, thumbnail = ""){
+      state.deletingId = id;
+      state.deletingTitle = title;
+      state.deletingThumbnail = thumbnail;
+      confirmTitle.textContent = `Delete ${title}?`;
+      confirmText.textContent = "This removes the document from Firestore for everyone.";
+      confirmOverlay.style.display = "grid";
+      confirmOverlay.setAttribute("aria-hidden", "false");
+      confirmStage.textContent = "Ready";
+      confirmPct.textContent = "0%";
+      confirmBar.style.width = "0%";
+    }
+
+    function closeDeleteConfirm(){
+      state.deletingId = null;
+      state.deletingTitle = "";
+      state.deletingThumbnail = "";
+      confirmOverlay.style.display = "none";
+      confirmOverlay.setAttribute("aria-hidden", "true");
       confirmBar.style.width = "0%";
       confirmPct.textContent = "0%";
       confirmStage.textContent = "Waiting";
@@ -716,7 +826,40 @@
         }catch{}
       }
       showToast("Deleted", `${state.deletingTitle} was removed.`);
-      closeDeleiles?.[0]));
+      closeDeleteConfirm();
+      if(state.editingId === state.deletingId) clearForm();
+    }
+
+    chips.forEach(chip => chip.addEventListener("click", () => {
+      state.filter = chip.dataset.filter;
+      chips.forEach(c => c.classList.toggle("active", c.dataset.filter === state.filter));
+      renderCards();
+    }));
+
+    searchInput.addEventListener("input", () => { state.query = searchInput.value; renderCards(); });
+    clearSearchBtn.addEventListener("click", () => { state.query = ""; searchInput.value = ""; renderCards(); showToast("Search cleared", "Showing all entries."); });
+    newBlankBtn.addEventListener("click", () => { clearForm(); showToast("New item", "Form reset for a fresh upload."); });
+    resetBtn.addEventListener("click", clearForm);
+    deleteFromEditBtn.addEventListener("click", () => {
+      if(state.editingId) openDeleteConfirm(state.editingId, fields.title.value || "Untitled", state.existingThumbnail || "");
+    });
+
+    entryForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      try{
+        await saveEntry();
+      }catch(err){
+        console.error(err);
+        showToast("Save failed", err?.message || "Could not save entry.");
+      }
+    });
+
+    [fields.title, fields.description, fields.type, fields.tag, fields.size, fields.date, fields.icon, fields.launch].forEach(el => {
+      el.addEventListener("input", () => {});
+      el.addEventListener("change", () => {});
+    });
+
+    thumbnailFile.addEventListener("change", (e) => handleFile(e.target.files?.[0]));
     dropzone.addEventListener("click", () => thumbnailFile.click());
     dropzone.addEventListener("keydown", (e) => {
       if(e.key === "Enter" || e.key === " "){
