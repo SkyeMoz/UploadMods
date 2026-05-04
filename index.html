@@ -190,10 +190,10 @@
           <div class="badgeRow">
             <span class="badge">Dark gray glassmorphism</span>
             <span class="badge">Live Firestore sync</span>
-            <span class="badge">Storage media picker</span>
+            <span class="badge">URL thumbnail fast path</span>
           </div>
           <h1>Upload, edit, and delete entries from one clean panel.</h1>
-          <p>Pick an image from your device, upload it to Firebase Storage, then save the Firestore document to the shared <b>global</b> collection so website 1 updates live for everyone.</p>
+          <p>Paste a direct image URL for instant saves, or pick a file and let Firebase Storage handle it. Everything writes to the shared <b>global</b> collection so website 1 updates live for everyone.</p>
         </div>
         <div class="heroStats">
           <div class="stat">
@@ -290,7 +290,12 @@
               </div>
             </div>
 
-            <div class="hint">The image you pick will upload to Firebase Storage and auto-save into the <code>thumbnail</code> field.</div>
+            <div class="field">
+              <label for="thumbnailUrl">Thumbnail URL</label>
+              <input id="thumbnailUrl" name="thumbnailUrl" placeholder="https://example.com/image.png" />
+            </div>
+
+            <div class="hint">Paste a direct image URL for instant uploads, or leave it blank and use the media picker below. URL wins over file.</div>
 
             <div class="mediaBox">
               <div class="mediaTop">
@@ -402,10 +407,11 @@
       deletingId: null,
       deletingTitle: "",
       deletingThumbnail: "",
+      deletingThumbnailPath: "",
       selectedFile: null,
       selectedPreviewUrl: "",
-      selectedStoragePath: "",
-      existingThumbnail: ""
+      existingThumbnail: "",
+      existingThumbnailPath: ""
     };
 
     const $ = (id) => document.getElementById(id);
@@ -437,13 +443,20 @@
     const chips = [...document.querySelectorAll(".chip")];
     const dropzone = $("dropzone");
     const thumbnailFile = $("thumbnailFile");
+    const thumbnailUrl = $("thumbnailUrl");
     const previewImg = $("previewImg");
     const mediaState = $("mediaState");
     const dropTitle = $("dropTitle");
 
     const fields = {
-      title: $("title"), description: $("description"), type: $("type"), tag: $("tag"),
-      size: $("size"), date: $("date"), icon: $("icon"), launch: $("launch")
+      title: $("title"),
+      description: $("description"),
+      type: $("type"),
+      tag: $("tag"),
+      size: $("size"),
+      date: $("date"),
+      icon: $("icon"),
+      launch: $("launch")
     };
 
     const nextFrame = () => new Promise(requestAnimationFrame);
@@ -489,7 +502,7 @@
     }
 
     function normalize(item){
-      return [item.title, item.description, item.type, item.tag, item.size, item.date, item.icon, item.launch].join(" ").toLowerCase();
+      return [item.title, item.description, item.type, item.tag, item.size, item.date, item.icon, item.launch, item.thumbnail].join(" ").toLowerCase();
     }
 
     function sortKey(item){
@@ -537,24 +550,50 @@
       state.selectedFile = null;
       if(state.selectedPreviewUrl) URL.revokeObjectURL(state.selectedPreviewUrl);
       state.selectedPreviewUrl = "";
-      state.selectedStoragePath = "";
-      mediaState.textContent = "No file selected";
-      dropTitle.textContent = "Choose an image";
       thumbnailFile.value = "";
-      previewImg.innerHTML = `<div class="previewFallback" id="previewFallback">No image selected yet.</div>`;
+      if(!thumbnailUrl.value.trim()){
+        mediaState.textContent = "No file selected";
+        dropTitle.textContent = "Choose an image";
+        previewImg.innerHTML = `<div class="previewFallback" id="previewFallback">No image selected yet.</div>`;
+      }
       setUploadProgress(false, 0, "Idle");
     }
 
     function setPreviewFromUrl(url, label = "Selected image"){
       if(url){
-        previewImg.innerHTML = `<img src="${escapeHtml(url)}" alt="preview" />`;
+        previewImg.innerHTML = `<img src="${escapeHtml(url)}" alt="preview" onerror="this.remove();this.parentElement.innerHTML='<div class=&quot;previewFallback&quot;>Thumbnail could not load.</div>'" />`;
         mediaState.textContent = label;
-        dropTitle.textContent = "Image ready";
+        dropTitle.textContent = "Thumbnail URL active";
       }else{
         previewImg.innerHTML = `<div class="previewFallback" id="previewFallback">No image selected yet.</div>`;
         mediaState.textContent = "No file selected";
         dropTitle.textContent = "Choose an image";
       }
+    }
+
+    function syncThumbnailPreview(){
+      const url = thumbnailUrl.value.trim();
+      if(url){
+        if(state.selectedPreviewUrl){
+          URL.revokeObjectURL(state.selectedPreviewUrl);
+          state.selectedPreviewUrl = "";
+        }
+        state.selectedFile = null;
+        thumbnailFile.value = "";
+        setPreviewFromUrl(url, "Using thumbnail URL");
+        return;
+      }
+      if(state.selectedFile && state.selectedPreviewUrl){
+        previewImg.innerHTML = `<img src="${state.selectedPreviewUrl}" alt="selected image" />`;
+        mediaState.textContent = `${state.selectedFile.name} • ${Math.round(state.selectedFile.size / 1024)} KB`;
+        dropTitle.textContent = state.selectedFile.name;
+        return;
+      }
+      if(state.existingThumbnail){
+        setPreviewFromUrl(state.existingThumbnail, "Current thumbnail");
+        return;
+      }
+      clearSelectedMedia();
     }
 
     function handleFile(file){
@@ -563,6 +602,7 @@
         showToast("Invalid file", "Pick an image file only.");
         return;
       }
+      thumbnailUrl.value = "";
       state.selectedFile = file;
       const url = URL.createObjectURL(file);
       if(state.selectedPreviewUrl) URL.revokeObjectURL(state.selectedPreviewUrl);
@@ -582,10 +622,12 @@
       fields.date.value = toDateText(item.date) || todayISO();
       fields.icon.value = item.icon || "spark";
       fields.launch.value = item.launch || "";
+      thumbnailUrl.value = item.thumbnailPath ? "" : (item.thumbnail || "");
       state.editingId = item.id;
       state.existingThumbnail = item.thumbnail || "";
+      state.existingThumbnailPath = item.thumbnailPath || "";
       clearSelectedMedia();
-      if(item.thumbnail) setPreviewFromUrl(item.thumbnail, "Current thumbnail");
+      syncThumbnailPreview();
       setMode(true);
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
@@ -595,10 +637,13 @@
       fields.type.value = "Apps";
       fields.icon.value = "spark";
       fields.date.value = todayISO();
+      thumbnailUrl.value = "";
       state.editingId = null;
       state.existingThumbnail = "";
-      setMode(false);
+      state.existingThumbnailPath = "";
       clearSelectedMedia();
+      setMode(false);
+      syncThumbnailPreview();
     }
 
     function updateStats(items){
@@ -646,7 +691,7 @@
           </div>
         `;
         card.querySelector("[data-edit]").addEventListener("click", () => fillForm(item));
-        card.querySelector("[data-delete]").addEventListener("click", () => openDeleteConfirm(item.id, item.title || "Untitled", item.thumbnail || ""));
+        card.querySelector("[data-delete]").addEventListener("click", () => openDeleteConfirm(item.id, item.title || "Untitled", item.thumbnail || "", item.thumbnailPath || ""));
         cards.appendChild(card);
       });
     }
@@ -712,7 +757,10 @@
     }
 
     async function uploadSelectedMedia(){
-      if(!state.selectedFile) return state.existingThumbnail || "";
+      if(!state.selectedFile) return {
+        url: state.existingThumbnail || "",
+        path: state.existingThumbnailPath || ""
+      };
 
       const originalFile = state.selectedFile;
 
@@ -764,7 +812,7 @@
             const url = await getDownloadURL(task.snapshot.ref);
             setUploadProgress(true, 100, "Done");
             setTimeout(() => setUploadProgress(false, 0, "Idle"), 400);
-            resolve(url);
+            resolve({ url, path });
           }catch(err){
             clearTimeout(timeout);
             setUploadProgress(false, 0, "Idle");
@@ -795,22 +843,33 @@
       saveBtn.textContent = state.editingId ? "Saving..." : "Uploading...";
 
       try{
-        const thumbnail = await uploadSelectedMedia();
+        const directUrl = thumbnailUrl.value.trim();
+        let thumbnail = state.existingThumbnail || "";
+        let thumbnailPath = state.existingThumbnailPath || "";
+
+        if(directUrl){
+          thumbnail = directUrl;
+          thumbnailPath = "";
+        }else if(state.selectedFile){
+          const uploaded = await uploadSelectedMedia();
+          thumbnail = uploaded.url || "";
+          thumbnailPath = uploaded.path || "";
+        }
+
         const payload = {
           ...data,
-          thumbnail: thumbnail || "",
-          updatedAt: serverTimestamp(),
-          createdAt: state.editingId ? undefined : serverTimestamp()
+          thumbnail,
+          thumbnailPath,
+          updatedAt: serverTimestamp()
         };
 
-        Object.keys(payload).forEach(k => payload[k] === undefined && delete payload[k]);
-
-        if(state.editingId){
+        if(!state.editingId){
+          payload.createdAt = serverTimestamp();
+          await addDoc(colRef, payload);
+          showToast("Uploaded", "New item added to the global collection.");
+        }else{
           await updateDoc(doc(db, "global", state.editingId), payload);
           showToast("Updated", "Entry saved to Firestore.");
-        }else{
-          await addDoc(colRef, { ...payload, createdAt: serverTimestamp() });
-          showToast("Uploaded", "New item added to the global collection.");
         }
 
         clearForm();
@@ -823,10 +882,11 @@
       }
     }
 
-    function openDeleteConfirm(id, title, thumbnail = ""){
+    function openDeleteConfirm(id, title, thumbnail = "", thumbnailPath = ""){
       state.deletingId = id;
       state.deletingTitle = title;
       state.deletingThumbnail = thumbnail;
+      state.deletingThumbnailPath = thumbnailPath;
       confirmTitle.textContent = `Delete ${title}?`;
       confirmText.textContent = "This removes the document from Firestore for everyone.";
       confirmOverlay.style.display = "grid";
@@ -840,6 +900,7 @@
       state.deletingId = null;
       state.deletingTitle = "";
       state.deletingThumbnail = "";
+      state.deletingThumbnailPath = "";
       confirmOverlay.style.display = "none";
       confirmOverlay.setAttribute("aria-hidden", "true");
       confirmBar.style.width = "0%";
@@ -847,16 +908,12 @@
       confirmStage.textContent = "Waiting";
     }
 
-    async function tryDeleteStorageThumb(url){
-      if(!url) return;
+    async function tryDeleteStorageThumb(){
+      if(!state.deletingThumbnailPath) return;
       try{
-        await deleteObject(storageRef(storage, url));
-      }catch{
-        try{
-          const decoded = decodeURIComponent(url);
-          const maybePath = decoded.includes("/o/") ? decoded.split("/o/")[1].split("?")[0] : decoded;
-          if(maybePath) await deleteObject(storageRef(storage, maybePath));
-        }catch{}
+        await deleteObject(storageRef(storage, state.deletingThumbnailPath));
+      }catch(err){
+        console.warn("Storage delete skipped:", err);
       }
     }
 
@@ -869,7 +926,7 @@
         await new Promise(r => setTimeout(r, 55));
       }
       await deleteDoc(doc(db, "global", state.deletingId));
-      await tryDeleteStorageThumb(state.deletingThumbnail);
+      await tryDeleteStorageThumb();
       showToast("Deleted", `${state.deletingTitle} was removed.`);
       closeDeleteConfirm();
       if(state.editingId === state.deletingId) clearForm();
@@ -886,7 +943,7 @@
     newBlankBtn.addEventListener("click", () => { clearForm(); showToast("New item", "Form reset for a fresh upload."); });
     resetBtn.addEventListener("click", clearForm);
     deleteFromEditBtn.addEventListener("click", () => {
-      if(state.editingId) openDeleteConfirm(state.editingId, fields.title.value || "Untitled", state.existingThumbnail || "");
+      if(state.editingId) openDeleteConfirm(state.editingId, fields.title.value || "Untitled", state.existingThumbnail || "", state.existingThumbnailPath || "");
     });
 
     entryForm.addEventListener("submit", async (e) => {
@@ -897,6 +954,17 @@
         console.error(err);
         showToast("Save failed", err?.message || "Could not save entry.");
       }
+    });
+
+    thumbnailUrl.addEventListener("input", () => {
+      if(thumbnailUrl.value.trim()){
+        state.selectedFile = null;
+        if(state.selectedPreviewUrl){
+          URL.revokeObjectURL(state.selectedPreviewUrl);
+          state.selectedPreviewUrl = "";
+        }
+      }
+      syncThumbnailPreview();
     });
 
     thumbnailFile.addEventListener("change", (e) => handleFile(e.target.files?.[0]));
@@ -936,6 +1004,7 @@
             date: d.date || "",
             icon: d.icon || "spark",
             thumbnail: d.thumbnail || "",
+            thumbnailPath: d.thumbnailPath || "",
             launch: d.launch || "",
             createdAt: d.createdAt || null,
             updatedAt: d.updatedAt || null
