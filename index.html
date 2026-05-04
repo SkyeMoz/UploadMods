@@ -546,6 +546,30 @@
       percent.textContent = `${Math.round(pct)}%`;
     }
 
+    function normalizeThumbnailUrl(input){
+      let url = String(input || "").trim();
+      if(!url) return "";
+
+      // Google Drive share link -> direct-ish image link
+      const driveMatch = url.match(/drive\.google\.com\/file\/d\/([^/]+)\//i);
+      if(driveMatch) return `https://drive.google.com/uc?export=view&id=${driveMatch[1]}`;
+
+      // Dropbox share link -> raw file
+      if(/dropbox\.com/i.test(url)){
+        if(url.includes("?raw=1")) return url;
+        if(url.includes("?dl=0")) return url.replace("?dl=0", "?raw=1");
+        if(url.includes("?dl=1")) return url.replace("?dl=1", "?raw=1");
+        return url + (url.includes("?") ? "&raw=1" : "?raw=1");
+      }
+
+      // GitHub blob -> raw
+      if(/github\.com\/.+\/blob\//i.test(url)){
+        return url.replace("github.com/", "raw.githubusercontent.com/").replace("/blob/", "/");
+      }
+
+      return url;
+    }
+
     function clearSelectedMedia(){
       state.selectedFile = null;
       if(state.selectedPreviewUrl) URL.revokeObjectURL(state.selectedPreviewUrl);
@@ -561,7 +585,8 @@
 
     function setPreviewFromUrl(url, label = "Selected image"){
       if(url){
-        previewImg.innerHTML = `<img src="${escapeHtml(url)}" alt="preview" onerror="this.remove();this.parentElement.innerHTML='<div class=&quot;previewFallback&quot;>Thumbnail could not load.</div>'" />`;
+        const safe = escapeHtml(url);
+        previewImg.innerHTML = `<img src="${safe}" alt="preview" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove();this.parentElement.innerHTML='<div class=&quot;previewFallback&quot;>Thumbnail could not load. Make sure the URL is a direct image link.</div>'" />`;
         mediaState.textContent = label;
         dropTitle.textContent = "Thumbnail URL active";
       }else{
@@ -572,7 +597,7 @@
     }
 
     function syncThumbnailPreview(){
-      const url = thumbnailUrl.value.trim();
+      const url = normalizeThumbnailUrl(thumbnailUrl.value);
       if(url){
         if(state.selectedPreviewUrl){
           URL.revokeObjectURL(state.selectedPreviewUrl);
@@ -584,7 +609,7 @@
         return;
       }
       if(state.selectedFile && state.selectedPreviewUrl){
-        previewImg.innerHTML = `<img src="${state.selectedPreviewUrl}" alt="selected image" />`;
+        previewImg.innerHTML = `<img src="${state.selectedPreviewUrl}" alt="selected image" loading="lazy" />`;
         mediaState.textContent = `${state.selectedFile.name} • ${Math.round(state.selectedFile.size / 1024)} KB`;
         dropTitle.textContent = state.selectedFile.name;
         return;
@@ -609,7 +634,7 @@
       state.selectedPreviewUrl = url;
       mediaState.textContent = `${file.name} • ${Math.round(file.size / 1024)} KB`;
       dropTitle.textContent = file.name;
-      previewImg.innerHTML = `<img src="${url}" alt="selected image" />`;
+      previewImg.innerHTML = `<img src="${url}" alt="selected image" loading="lazy" />`;
       showToast("Media picked", "Ready to upload.");
     }
 
@@ -670,7 +695,7 @@
           <div class="cardGlow"></div>
           <div class="cardTop">
             <div class="appInfo">
-              <div class="thumb" aria-hidden="true">${thumb ? `<img src="${escapeHtml(thumb)}" alt="${escapeHtml(item.title)}" onerror="this.remove(); this.parentElement.innerHTML='<div class=\"iconFallback\">${iconSvg(item.icon)}</div>'" />` : `<div class="iconFallback">${iconSvg(item.icon)}</div>`}</div>
+              <div class="thumb" aria-hidden="true">${thumb ? `<img src="${escapeHtml(thumb)}" alt="${escapeHtml(item.title)}" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove(); this.parentElement.innerHTML='<div class=\"iconFallback\">${iconSvg(item.icon)}</div>'" />` : `<div class="iconFallback">${iconSvg(item.icon)}</div>`}</div>
               <div class="text">
                 <div class="titleRow">
                   <h3>${escapeHtml(item.title || "Untitled")}</h3>
@@ -700,7 +725,6 @@
       const MAX_DIRECT_BYTES = 2.5 * 1024 * 1024;
       const MAX_DIMENSION = 1400;
       const QUALITY = 0.76;
-
       if(file.size <= MAX_DIRECT_BYTES) return file;
 
       const objectUrl = URL.createObjectURL(file);
@@ -757,10 +781,9 @@
     }
 
     async function uploadSelectedMedia(){
-      if(!state.selectedFile) return {
-        url: state.existingThumbnail || "",
-        path: state.existingThumbnailPath || ""
-      };
+      if(!state.selectedFile){
+        return { url: state.existingThumbnail || "", path: state.existingThumbnailPath || "" };
+      }
 
       const originalFile = state.selectedFile;
 
@@ -843,7 +866,7 @@
       saveBtn.textContent = state.editingId ? "Saving..." : "Uploading...";
 
       try{
-        const directUrl = thumbnailUrl.value.trim();
+        const directUrl = normalizeThumbnailUrl(thumbnailUrl.value);
         let thumbnail = state.existingThumbnail || "";
         let thumbnailPath = state.existingThumbnailPath || "";
 
@@ -1025,4 +1048,4 @@
     renderCards();
   </script>
 </body>
-</html>
+</html>.
