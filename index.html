@@ -516,6 +516,7 @@
 
     function clearSelectedMedia(){
       state.selectedFile = null;
+      if(state.selectedPreviewUrl) URL.revokeObjectURL(state.selectedPreviewUrl);
       state.selectedPreviewUrl = "";
       state.selectedStoragePath = "";
       mediaState.textContent = "No file selected";
@@ -524,7 +525,7 @@
       previewImg.innerHTML = `<div class="previewFallback" id="previewFallback">No image selected yet.</div>`;
     }
 
-    function setPreviewFromUrl(url, label = "Selected image"){
+    function setPreviewFromUrl(url, label = "Selected image"){ 
       if(url){
         previewImg.innerHTML = `<img src="${escapeHtml(url)}" alt="preview" />`;
         mediaState.textContent = label;
@@ -549,6 +550,7 @@
       mediaState.textContent = `${file.name} • ${Math.round(file.size / 1024)} KB`;
       dropTitle.textContent = file.name;
       previewImg.innerHTML = `<img src="${url}" alt="selected image" />`;
+      showToast("Media picked", "It will be compressed before upload to speed things up.");
     }
 
     function fillForm(item){
@@ -629,12 +631,48 @@
       });
     }
 
+    async function compressImageFile(file){
+      const MAX_DIMENSION = 1280;
+      const QUALITY = 0.78;
+
+      const objectUrl = URL.createObjectURL(file);
+      try{
+        const img = await new Promise((resolve, reject) => {
+          const image = new Image();
+          image.onload = () => resolve(image);
+          image.onerror = reject;
+          image.src = objectUrl;
+        });
+
+        const scale = Math.min(1, MAX_DIMENSION / Math.max(img.width || 1, img.height || 1));
+        const width = Math.max(1, Math.round((img.width || 1) * scale));
+        const height = Math.max(1, Math.round((img.height || 1) * scale));
+
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d", { alpha: true });
+        ctx.drawImage(img, 0, 0, width, height);
+
+        const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/webp", QUALITY))
+          || await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", QUALITY));
+
+        if(!blob) return file;
+        const ext = blob.type.includes("webp") ? "webp" : "jpg";
+        return new File([blob], file.name.replace(/\.[^.]+$/, "") + `.${ext}`, { type: blob.type || file.type });
+      }finally{
+        URL.revokeObjectURL(objectUrl);
+      }
+    }
+
     async function uploadSelectedMedia(){
       if(!state.selectedFile) return state.existingThumbnail || "";
-      const safeName = state.selectedFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const uploadFile = await compressImageFile(state.selectedFile);
+      const safeName = uploadFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
       const path = `uploads/${Date.now()}_${Math.random().toString(36).slice(2)}_${safeName}`;
       const ref = storageRef(storage, path);
-      await uploadBytes(ref, state.selectedFile, { contentType: state.selectedFile.type });
+      const metadata = { contentType: uploadFile.type || state.selectedFile.type || "image/jpeg", cacheControl: "public,max-age=31536000,immutable" };
+      await uploadBytes(ref, uploadFile, metadata);
       return await getDownloadURL(ref);
     }
 
