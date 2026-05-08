@@ -128,15 +128,6 @@
     .metaItem{display:inline-flex;align-items:center;gap:7px;padding:8px 10px;border-radius:999px;background:rgba(255,255,255,.03);border:1px solid var(--line);color:#d7e5fb;font-size:.83rem;font-weight:700}
     .actions{display:flex;gap:10px;flex-wrap:wrap}
     .actions .btn{flex:1;justify-content:center}
-.noticePanel{display:grid;gap:14px;margin-top:16px}
-    .noticePreview{border-radius:24px;padding:14px;border:1px solid var(--line);background:rgba(255,255,255,.03);display:grid;gap:12px}
-    .noticeBannerBox{height:180px;border-radius:20px;overflow:hidden;border:1px solid var(--line);background:linear-gradient(135deg,rgba(96,165,250,.14),rgba(139,92,246,.10));position:relative;display:grid;place-items:center}
-    .noticeBannerBox img{width:100%;height:100%;object-fit:cover;display:none}
-    .noticeBannerFallback{position:absolute;inset:0;display:grid;place-items:center;color:#dce8f8;text-align:center;padding:16px;font-weight:700;line-height:1.45}
-    .noticeLiveBox{border-radius:20px;padding:14px;border:1px solid var(--line);background:rgba(255,255,255,.02);display:grid;gap:8px}
-    .noticeLiveBox strong{font-size:1rem;line-height:1.2}
-    .noticeLiveBox p{margin:0;color:var(--muted);line-height:1.5;font-size:.92rem}
-    .noticeLiveMeta{font-size:.8rem;color:var(--muted-2)}
 
     .empty{padding:42px 20px;text-align:center;border-radius:28px;border:1px dashed rgba(255,255,255,.14);background:rgba(255,255,255,.03);color:var(--muted)}
     .footer{padding:6px 4px 12px;color:rgba(154,165,177,.76);font-size:.83rem;text-align:center}
@@ -197,12 +188,12 @@
       <section class="hero glass">
         <div class="heroCopy">
           <div class="badgeRow">
-            <span class="badge">Dark gray glassmorphism</span>
-            <span class="badge">Live Firestore sync</span>
-            <span class="badge">URL thumbnail fast path</span>
+            <span class="badge"></span>
+            <span class="badge"></span>
+            <span class="badge"></span>
           </div>
-          <h1>Upload, edit, and delete entries from one clean panel.</h1>
-          <p>Paste a direct image URL for instant saves, or pick a file and let Firebase Storage handle it. Everything writes to the shared <b>global</b> collection so website 1 updates live for everyone.</p>
+          <h1></h1>
+          <p><b></b> </p>
         </div>
         <div class="heroStats">
           <div class="stat">
@@ -283,7 +274,7 @@
 
             <div class="row2">
               <div class="field">
-                <label for="icon">Icon</label>
+                <label for="icon">Leave this empty ✌👇</label>
                 <select id="icon" name="icon">
                   <option value="spark">spark</option>
                   <option value="note">note</option>
@@ -304,7 +295,7 @@
               <input id="thumbnailUrl" name="thumbnailUrl" placeholder="https://example.com/image.png" />
             </div>
 
-            <div class="hint">Paste a direct image URL for instant uploads, or leave it blank and use the media picker below. URL wins over file.</div>
+            <div class="hint">skyemoz</div>
 
             <div class="mediaBox">
               <div class="mediaTop">
@@ -323,8 +314,8 @@
                   </div>
                 </div>
                 <div class="fileInfo" id="fileInfo">
-                  <span class="pill">Preview ready</span>
-                  <span class="pill">Auto uploads to Storage</span>
+                  <span class="pill"></span>
+                  <span class="pill"></span>
                 </div>
               </div>
               <div class="previewImg" id="previewImg"><div class="previewFallback" id="previewFallback">No image selected yet.</div></div>
@@ -336,63 +327,17 @@
             </div>
 
             <div class="formActions">
-              <button class="btn primary" id="saveBtn" type="submit">Upload to Firestore</button>
-              <button class="btn danger" id="deleteFromEditBtn" type="button" style="display:none;">Delete this entry</button>
+              <button class="btn primary" id="saveBtn" type="submit">Upload </button>
+              <button class="btn danger" id="deleteFromEditBtn" type="button" style="display:none;">Delete </button>
             </div>
           </form>
-          <section class="panel glass noticePanel">
-            <div class="panelHeader">
-              <div>
-                <h2>Global notice</h2>
-                <p>Send a sticky dialog that every viewer keeps seeing until they press Continue.</p>
-              </div>
-            </div>
-
-            <form class="form" id="noticeForm">
-              <div class="field">
-                <label for="noticeTitle">Title</label>
-                <input id="noticeTitle" name="noticeTitle" maxlength="80" placeholder="Server update" />
-              </div>
-
-              <div class="field">
-                <label for="noticeBannerUrl">Banner (Url)</label>
-                <input id="noticeBannerUrl" name="noticeBannerUrl" placeholder="https://example.com/banner.png" />
-              </div>
-
-              <div class="field">
-                <label for="noticeDescription">Description</label>
-                <textarea id="noticeDescription" name="noticeDescription" maxlength="280" placeholder="Write the message viewers should see."></textarea>
-              </div>
-
-              <div class="noticePreview">
-                <div class="noticeBannerBox" aria-label="Banner preview">
-                  <img id="noticeBannerImg" alt="Notice banner preview" />
-                  <div class="noticeBannerFallback" id="noticeBannerFallback">Banner preview will appear here.</div>
-                </div>
-
-                <div class="noticeLiveBox">
-                  <strong id="noticeLiveTitle">No active notice</strong>
-                  <p id="noticeLiveDesc">Send one to keep the dialog on every viewer until they continue.</p>
-                  <div class="noticeLiveMeta" id="noticeLiveMeta">Waiting for a live notice.</div>
-                </div>
-              </div>
-
-              <div class="formActions">
-                <button class="btn primary" id="sendNoticeBtn" type="submit">Send Globally</button>
-                <button class="btn ghost" id="clearNoticeBtn" type="button">Clear global notice</button>
-              </div>
-
-              <div class="tiny" id="noticeStatus">No notice sent yet.</div>
-            </form>
-          </section>
-
         </aside>
 
         <section class="listPanel glass">
           <div class="listTop">
             <div>
-              <h2>Published entries</h2>
-              <span>Realtime from Firestore collection <b>global</b></span>
+              <h2>Published </h2>
+              <span><b>global</b></span>
             </div>
             <div class="controls" style="justify-content:flex-start">
               <button class="btn ghost" id="clearSearchBtn" type="button">Clear search</button>
@@ -433,7 +378,7 @@
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
     import {
-      getFirestore, collection, addDoc, doc, setDoc, updateDoc, deleteDoc,
+      getFirestore, collection, addDoc, doc, updateDoc, deleteDoc,
       onSnapshot, query, orderBy, serverTimestamp
     } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
     import {
@@ -453,7 +398,6 @@
     const db = getFirestore(app);
     const storage = getStorage(app);
     const colRef = collection(db, "global");
-    const noticeRef = doc(db, "announcements", "global");
 
     const state = {
       items: [],
@@ -469,7 +413,6 @@
       existingThumbnail: "",
       existingThumbnailPath: ""
     };
-    const noticeState = { activeId: "", activeTitle: "", activeBanner: "", activeDescription: "" };
 
     const $ = (id) => document.getElementById(id);
     const entryForm = $("entryForm");
@@ -504,18 +447,6 @@
     const previewImg = $("previewImg");
     const mediaState = $("mediaState");
     const dropTitle = $("dropTitle");
-    const noticeForm = $("noticeForm");
-    const noticeTitle = $("noticeTitle");
-    const noticeBannerUrl = $("noticeBannerUrl");
-    const noticeDescription = $("noticeDescription");
-    const noticeBannerImg = $("noticeBannerImg");
-    const noticeBannerFallback = $("noticeBannerFallback");
-    const noticeLiveTitle = $("noticeLiveTitle");
-    const noticeLiveDesc = $("noticeLiveDesc");
-    const noticeLiveMeta = $("noticeLiveMeta");
-    const noticeStatus = $("noticeStatus");
-    const sendNoticeBtn = $("sendNoticeBtn");
-    const clearNoticeBtn = $("clearNoticeBtn");
 
     const fields = {
       title: $("title"),
@@ -591,13 +522,13 @@
 
     function setMode(editing){
       if(editing){
-        formTitle.textContent = "Edit entry";
+        formTitle.textContent = "edit";
         formSubtitle.textContent = "Update fields, swap media, then save changes.";
         saveBtn.textContent = "Save changes";
         deleteFromEditBtn.style.display = "inline-flex";
       }else{
-        formTitle.textContent = "Create entry";
-        formSubtitle.textContent = "Add a new item to the shared global collection.";
+        formTitle.textContent = "mods";
+        formSubtitle.textContent = "";
         saveBtn.textContent = "Upload to Firestore";
         deleteFromEditBtn.style.display = "none";
       }
@@ -637,22 +568,6 @@
       }
 
       return url;
-    }
-
-
-    function syncNoticeBannerPreview(){
-      const url = normalizeThumbnailUrl(noticeBannerUrl.value);
-      if(url){
-        noticeBannerImg.src = url;
-        noticeBannerImg.style.display = "block";
-        noticeBannerFallback.style.display = "none";
-        noticeStatus.textContent = "Banner preview loaded from the URL.";
-      }else{
-        noticeBannerImg.removeAttribute("src");
-        noticeBannerImg.style.display = "none";
-        noticeBannerFallback.style.display = "grid";
-        noticeStatus.textContent = "No banner URL set yet.";
-      }
     }
 
     function clearSelectedMedia(){
@@ -745,7 +660,7 @@
     function clearForm(){
       entryForm.reset();
       fields.type.value = "Apps";
-      fields.icon.value = "spark";
+      fields.icon.value = "";
       fields.date.value = todayISO();
       thumbnailUrl.value = "";
       state.editingId = null;
@@ -990,75 +905,6 @@
       }
     }
 
-
-    async function sendGlobalNotice(){
-      const title = noticeTitle.value.trim();
-      const banner = normalizeThumbnailUrl(noticeBannerUrl.value);
-      const description = noticeDescription.value.trim();
-
-      if(!title || !description){
-        showToast("Missing fields", "Notice title and description are required.");
-        return;
-      }
-
-      sendNoticeBtn.disabled = true;
-      sendNoticeBtn.textContent = "Sending...";
-
-      try{
-        const payload = {
-          noticeId: `notice_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-          title,
-          banner,
-          description,
-          active: true,
-          scope: "global",
-          source: "UploadMoz",
-          sentAt: serverTimestamp(),
-          updatedAt: serverTimestamp()
-        };
-
-        await setDoc(noticeRef, payload);
-        noticeState.activeId = payload.noticeId;
-        noticeState.activeTitle = title;
-        noticeState.activeBanner = banner;
-        noticeState.activeDescription = description;
-        noticeLiveTitle.textContent = title;
-        noticeLiveDesc.textContent = description;
-        noticeLiveMeta.textContent = banner ? "Banner attached." : "No banner attached.";
-        noticeStatus.textContent = `Sent globally: ${title}`;
-        showToast("Notice sent", "Everyone will see it until they continue.");
-        noticeForm.reset();
-        syncNoticeBannerPreview();
-      }catch(err){
-        console.error(err);
-        showToast("Send failed", err?.message || "Could not send the notice.");
-      }finally{
-        sendNoticeBtn.disabled = false;
-        sendNoticeBtn.textContent = "Send Globally";
-      }
-    }
-
-    async function clearGlobalNotice(){
-      clearNoticeBtn.disabled = true;
-      try{
-        await deleteDoc(noticeRef);
-        noticeState.activeId = "";
-        noticeState.activeTitle = "";
-        noticeState.activeBanner = "";
-        noticeState.activeDescription = "";
-        noticeLiveTitle.textContent = "No active notice";
-        noticeLiveDesc.textContent = "Send one to keep the dialog on every viewer until they continue.";
-        noticeLiveMeta.textContent = "Waiting for a live notice.";
-        noticeStatus.textContent = "Global notice cleared.";
-        showToast("Notice cleared", "The global notice has been removed.");
-      }catch(err){
-        console.error(err);
-        showToast("Clear failed", err?.message || "Could not clear the notice.");
-      }finally{
-        clearNoticeBtn.disabled = false;
-      }
-    }
-
     function openDeleteConfirm(id, title, thumbnail = "", thumbnailPath = ""){
       state.deletingId = id;
       state.deletingTitle = title;
@@ -1122,13 +968,6 @@
     deleteFromEditBtn.addEventListener("click", () => {
       if(state.editingId) openDeleteConfirm(state.editingId, fields.title.value || "Untitled", state.existingThumbnail || "", state.existingThumbnailPath || "");
     });
-
-    noticeBannerUrl.addEventListener("input", syncNoticeBannerPreview);
-    noticeForm.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      await sendGlobalNotice();
-    });
-    clearNoticeBtn.addEventListener("click", () => clearGlobalNotice());
 
     entryForm.addEventListener("submit", async (e) => {
       e.preventDefault();
@@ -1204,41 +1043,6 @@
       });
     }
 
-
-    function loadNoticeLive(){
-      onSnapshot(noticeRef, (snap) => {
-        if(!snap.exists()){
-          noticeState.activeId = "";
-          noticeState.activeTitle = "";
-          noticeState.activeBanner = "";
-          noticeState.activeDescription = "";
-          noticeLiveTitle.textContent = "No active notice";
-          noticeLiveDesc.textContent = "Send one to keep the dialog on every viewer until they continue.";
-          noticeLiveMeta.textContent = "Waiting for a live notice.";
-          return;
-        }
-
-        const d = snap.data() || {};
-        noticeState.activeId = d.noticeId || snap.id || "";
-        noticeState.activeTitle = d.title || "Untitled notice";
-        noticeState.activeBanner = d.banner || "";
-        noticeState.activeDescription = d.description || "";
-
-        noticeLiveTitle.textContent = noticeState.activeTitle;
-        noticeLiveDesc.textContent = noticeState.activeDescription || "No description provided.";
-        noticeLiveMeta.textContent = noticeState.activeBanner
-          ? `Live globally • Notice ID: ${noticeState.activeId}`
-          : `Live globally • Notice ID: ${noticeState.activeId} • No banner`;
-      }, (err) => {
-        console.error(err);
-        noticeLiveTitle.textContent = "Notice feed error";
-        noticeLiveDesc.textContent = "Could not connect to the announcement document.";
-        noticeLiveMeta.textContent = "Check your Firebase rules and config.";
-      });
-    }
-
-    syncNoticeBannerPreview();
-    loadNoticeLive();
     clearForm();
     loadLive();
     renderCards();
